@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import sys
 import warnings
-from datetime import datetime
+from datetime import date, datetime
 import json
 
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
@@ -73,8 +73,10 @@ def filtering_config_info(df_dist_config):
 
 def loading_input_file(folder_name, header):
 
+    header = header.strip()
     header = int(header)
-    input_directory = '../' + folder_name
+
+    input_directory = '../' + folder_name + '/Input'
 
     if not os.path.isdir(input_directory):
         print('Folder does not exist - {}'.format(input_directory))
@@ -90,18 +92,18 @@ def loading_input_file(folder_name, header):
     else:
         input_file_name = input_directory + '/' + os.listdir(input_directory)[0]
         df_input = pd.read_excel(input_file_name, dtype=str, header=header).fillna('')
-        
-    return df_input
+
+    return df_input, input_file_name
 
 
 def assigning_columns(df_dist_config, df_data_dict, distributor, df_neogrid_template, df_input):
-
+    
     #Creating list of keys of dict
-    columns_to_be_checked = df_dist_config.columns[6:]
+    columns_to_be_checked = df_dist_config.columns[5:]
     df_data_dict.set_index(['Neogrid_template'], inplace=True)
 
     #Creating list of values of dict
-    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[6:]
+    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[5:]
 
     #Nesting structure. Creating dict with keys and values
     dict_columns_vs_values_single_dist = dict(zip(columns_to_be_checked, list_of_values_dist_config))
@@ -149,40 +151,169 @@ def declaring_de_para_dates(month):
 
 def processing_dates(dists_individual_info_list, distributor, df_neogrid_template, df_input):
 
-    if dists_individual_info_list[distributor]['date']:
-        ano = dists_individual_info_list[distributor]['date'][:4]
-        month = dists_individual_info_list[distributor]['date'][4:6]
-        day = dists_individual_info_list[distributor]['date']
+    if dists_individual_info_list[distributor]['Dia']:
+        day = dists_individual_info_list[distributor]['Dia']
+    else:
+        day = str(df_neogrid_template.loc[0, 'Dia'])
 
-        trim = ano + ' Trimestre ' + declaring_de_para_dates(month)[0]
-        month = ano + ' ' + declaring_de_para_dates(month)[1]
+    year = day[:4]
+    month = day[4:6]
+    trim = year + ' Trimestre ' + declaring_de_para_dates(month)[0]
+    month = year + ' ' + declaring_de_para_dates(month)[1]
 
-        print(day)
-        print(trim)
-        print(month)
+    year_month_to_create_time_stamp = day[:6]
 
+    dates = {
+        'year' : year,
+        'month' : month,
+        'trim' : trim,
+        'time_stamp': year_month_to_create_time_stamp
+    }
 
+    input_date_format = dists_individual_info_list[distributor]['date_format']
+    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format, errors='coerce')
 
-
-
-dist_info_path, dist_config_path, data_dictionary_path = setting_config_paths()
-df_dist_info, df_dist_config, df_data_dict = loading_config_information(dist_info_path, dist_config_path, data_dictionary_path)
-df_neogrid_template = loading_neogrid_template()
-df_dist_info, df_dist_config = sanitizing_config_file(df_dist_info, df_dist_config)
-dists_individual_info_list = filtering_config_info(df_dist_config)
-df_input = loading_input_file(dists_individual_info_list['Amazon']['folder_name'], dists_individual_info_list['Amazon']['header'])
-
-distributor = 'Amazon'
-df_neogrid_template = assigning_columns(df_dist_config, df_data_dict, distributor, df_neogrid_template, df_input)
-processing_dates(dists_individual_info_list, distributor, df_neogrid_template, df_input)
-
-exit()
-print(df_neogrid_template)
+    return dates, df_neogrid_template
 
 
-"""
-Defining Paths
-Load Data Frames
-Sanitizing DFS
-Declaring Neogrid Template
-"""
+def filling_dates_into_neogrid_template(df_neogrid_template, dates):
+
+    df_neogrid_template['Ano'] = dates['year']
+    df_neogrid_template['Trimestre'] = dates['trim']
+    df_neogrid_template['Mês'] = dates['month']
+    df_neogrid_template['Semana'] = df_neogrid_template['Dia'].dt.week
+
+    #Extracting just the date from the <Dia> column
+    df_neogrid_template['Dia'] = df_neogrid_template['Dia'].dt.date
+
+    return df_neogrid_template
+
+
+def moving_input_file_to_archive(input_file_name):
+    
+    archive_path = '/'.join(input_file_name.split('/')[:-2]) + '/Archive'
+
+    if not os.path.isdir(archive_path):
+        os.mkdir(archive_path)
+    
+    file_moved_path = archive_path + '/' + input_file_name.split('/')[-1] + 'archived'
+
+    os.rename(input_file_name, file_moved_path)
+
+
+def writing_neogrid_template_file(df_neogrid_template, distribuidor, input_file_name, timestamp_year_and_month):
+
+    extension = '.xlsx'
+    final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
+
+    output_path = '/'.join(input_file_name.split('/')[:-2]) + '/Output'
+
+    output_file_name = output_path + '/DBD_DIAGEO_' + distribuidor + '_' + final_time_stamp + extension
+
+    if not os.path.isdir(output_path):
+        os.mkdir(output_path)
+
+    df_neogrid_template.to_excel(output_file_name, index=False)
+
+
+def release_memory_data_frames():
+    pass
+    
+    
+def main():
+
+    try:
+        print('setting_config_paths')
+        dist_info_path, dist_config_path, data_dictionary_path = setting_config_paths()
+    except Exception as error:
+        print(error)
+        sys.exit(1)
+
+    try:
+        print('loading_config_information')
+        df_dist_info, df_dist_config, df_data_dict = loading_config_information(dist_info_path,
+            dist_config_path, data_dictionary_path)
+    except Exception as error:
+        print(error)
+        sys.exit(1)
+
+    try:
+        print('loading_neogrid_template')
+        df_neogrid_template = loading_neogrid_template()
+    except Exception as error:
+        print(error)
+        sys.exit(1)
+
+    try:
+        print('sanitizing_config_file')
+        df_dist_info, df_dist_config = sanitizing_config_file(df_dist_info, df_dist_config)
+    except Exception as error:
+        print(error)
+        sys.exit(1)
+
+    try:
+        print('filtering_config_info')
+        dists_individual_info_list = filtering_config_info(df_dist_config)
+    except Exception as error:
+        print(error)
+        sys.exit(1)
+
+    if dists_individual_info_list:
+        for distributor in dists_individual_info_list:
+            
+            try:
+                print('loading_input_file')
+                df_input, input_file_name = loading_input_file(dists_individual_info_list[distributor]['folder_name'],
+                        dists_individual_info_list[distributor]['header'])
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+
+            try:
+                print('assigning_columns')
+                df_neogrid_template = assigning_columns(df_dist_config, df_data_dict, distributor, 
+                    df_neogrid_template, df_input)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+
+            try:
+                print('processing_dates')
+                dates, df_neogrid_template = processing_dates(
+                    dists_individual_info_list, distributor,
+                    df_neogrid_template, df_input)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+            
+            try:
+                print('filling_dates_into_neogrid_template')
+                df_neogrid_template = filling_dates_into_neogrid_template(
+                    df_neogrid_template, dates)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+
+            try:
+                print('writing_neogrid_template_file')
+                writing_neogrid_template_file(
+                    df_neogrid_template, distributor, input_file_name, dates['time_stamp'])
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+
+            try:
+                print('moving_input_file_to_archive')
+                moving_input_file_to_archive(input_file_name)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+
+            print('{} - Successfully executed!'.format(distributor))
+    else:
+        print('No distributor to be processed!')
+    input('Press any key to close')
+
+if __name__ == '__main__':
+    main()
+
