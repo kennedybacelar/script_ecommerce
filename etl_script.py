@@ -3,27 +3,25 @@ import os
 import sys
 import warnings
 from datetime import date, datetime
-import json
 
+sys.path.insert(1, 'dependencies')
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 pd.options.mode.chained_assignment = None
 
 def setting_config_paths():
 
-    dist_info_path = '../distributors_info.xlsx'
     dist_config_path = '../distributors_config.xlsx'
     data_dictionary_path = '../data_dictionary.xlsx'
 
-    return dist_info_path, dist_config_path, data_dictionary_path
+    return dist_config_path, data_dictionary_path
 
 
-def loading_config_information(dist_info_path, dist_config_path, data_dictionary_path):
+def loading_config_information(dist_config_path, data_dictionary_path):
 
-    df_dist_info = pd.read_excel(dist_info_path, dtype=str, header=0).fillna('')
     df_dist_config = pd.read_excel(open(dist_config_path, 'rb'), dtype=str, header=0).fillna('')
     df_data_dict = pd.read_excel(data_dictionary_path, dtype=str, header=0).fillna('')
     
-    return df_dist_info, df_dist_config, df_data_dict
+    return df_dist_config, df_data_dict
 
 
 def loading_neogrid_template():
@@ -34,7 +32,7 @@ def loading_neogrid_template():
     return df_neogrid_template
 
 
-def sanitizing_config_file(df_dist_info, df_dist_config):
+def sanitizing_config_file(df_dist_config):
 
     columns = df_dist_config.columns
 
@@ -47,7 +45,7 @@ def sanitizing_config_file(df_dist_info, df_dist_config):
     to_be_dropped = df_dist_config[df_dist_config['to_be_processed'] != 'y'].index
     df_dist_config.drop(to_be_dropped, inplace=True)
 
-    return df_dist_info, df_dist_config
+    return df_dist_config
 
 
 def filtering_config_info(df_dist_config):
@@ -71,11 +69,9 @@ def filtering_config_info(df_dist_config):
     return dists_individual_info_list
 
 
-def loading_input_file(folder_name, header):
+def loading_input_file(folder_name, header, has_specific_script, extra_arg):
 
-    header = header.strip()
     header = int(header)
-
     input_directory = '../' + folder_name + '/Input'
 
     if not os.path.isdir(input_directory):
@@ -87,23 +83,27 @@ def loading_input_file(folder_name, header):
         print('Error: More than one input file to be processed - {}'.format(folder_name))
         sys.exit(1)
     elif (len(os.listdir(input_directory)) == 0):
-        print('No files in {}'.format(folder_name))
+        print('No input files in {}'.format(folder_name))
         sys.exit(1)
     else:
         input_file_name = input_directory + '/' + os.listdir(input_directory)[0]
-        df_input = pd.read_excel(input_file_name, dtype=str, header=header).fillna('')
 
+        if has_specific_script:
+            specific_input_script = __import__(has_specific_script)
+            df_input = specific_input_script.loading_df_input(input_file_name, header, extra_arg)
+            return df_input, input_file_name
+        df_input = pd.read_excel(input_file_name, dtype=str, header=header).fillna('')
     return df_input, input_file_name
 
 
 def assigning_columns(df_dist_config, df_data_dict, distributor, df_neogrid_template, df_input):
     
     #Creating list of keys of dict
-    columns_to_be_checked = df_dist_config.columns[5:]
+    columns_to_be_checked = df_dist_config.columns[6:]
     df_data_dict.set_index(['Neogrid_template'], inplace=True)
 
     #Creating list of values of dict
-    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[5:]
+    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[6:]
 
     #Nesting structure. Creating dict with keys and values
     dict_columns_vs_values_single_dist = dict(zip(columns_to_be_checked, list_of_values_dist_config))
@@ -203,17 +203,18 @@ def moving_input_file_to_archive(input_file_name):
 
 def writing_neogrid_template_file(df_neogrid_template, distribuidor, input_file_name, timestamp_year_and_month):
 
-    extension = '.xlsx'
     final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
 
     output_path = '/'.join(input_file_name.split('/')[:-2]) + '/Output'
 
-    output_file_name = output_path + '/DBD_DIAGEO_' + distribuidor + '_' + final_time_stamp + extension
+    output_file_name = output_path + '/DBD_DIAGEO_' + distribuidor + '_' + final_time_stamp
 
     if not os.path.isdir(output_path):
         os.mkdir(output_path)
 
-    df_neogrid_template.to_excel(output_file_name, index=False)
+    df_neogrid_template.to_excel(output_file_name + '.xlsx', index=False)
+    df_neogrid_template.to_csv(output_file_name + '.txt', index=False, sep=';', encoding='mbcs')
+
 
 
 def release_memory_data_frames():
@@ -224,15 +225,15 @@ def main():
 
     try:
         print('setting_config_paths')
-        dist_info_path, dist_config_path, data_dictionary_path = setting_config_paths()
+        dist_config_path, data_dictionary_path = setting_config_paths()
     except Exception as error:
         print(error)
         sys.exit(1)
 
     try:
         print('loading_config_information')
-        df_dist_info, df_dist_config, df_data_dict = loading_config_information(dist_info_path,
-            dist_config_path, data_dictionary_path)
+        df_dist_config, df_data_dict = loading_config_information(dist_config_path, 
+            data_dictionary_path)
     except Exception as error:
         print(error)
         sys.exit(1)
@@ -246,7 +247,7 @@ def main():
 
     try:
         print('sanitizing_config_file')
-        df_dist_info, df_dist_config = sanitizing_config_file(df_dist_info, df_dist_config)
+        df_dist_config = sanitizing_config_file(df_dist_config)
     except Exception as error:
         print(error)
         sys.exit(1)
@@ -262,9 +263,11 @@ def main():
         for distributor in dists_individual_info_list:
             
             try:
-                print('loading_input_file')
+                print('loading_input_file {}'.format(distributor))
                 df_input, input_file_name = loading_input_file(dists_individual_info_list[distributor]['folder_name'],
-                        dists_individual_info_list[distributor]['header'])
+                        dists_individual_info_list[distributor]['header'],
+                        dists_individual_info_list[distributor]['script_file'],
+                        dists_individual_info_list[distributor]['extra_arg'])
             except Exception as error:
                 print(error)
                 sys.exit(1)
