@@ -3,6 +3,7 @@ import os
 import sys
 import warnings
 from datetime import date, datetime
+import gc
 
 sys.path.insert(1, 'dependencies')
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
@@ -46,6 +47,16 @@ def sanitizing_config_file(df_dist_config):
     df_dist_config.drop(to_be_dropped, inplace=True)
 
     return df_dist_config
+
+
+def sanitizing_data_dictionary(df_data_dict):
+
+    for column in df_data_dict.columns:
+        df_data_dict[column] = df_data_dict[column].str.strip()
+    
+    df_data_dict.set_index(['Neogrid_template'], inplace=True)
+
+    return df_data_dict
 
 
 def filtering_config_info(df_dist_config):
@@ -99,11 +110,11 @@ def loading_input_file(folder_name, header, has_specific_script, extra_arg):
 def assigning_columns(df_dist_config, df_data_dict, distributor, df_neogrid_template, df_input):
     
     #Creating list of keys of dict
-    columns_to_be_checked = df_dist_config.columns[6:]
-    df_data_dict.set_index(['Neogrid_template'], inplace=True)
+    #(Remembering that data_dict index has been set in previous function) - That's because [:5] and not [:6]
+    columns_to_be_checked = df_dist_config.columns[5:]
 
     #Creating list of values of dict
-    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[6:]
+    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[5:]
 
     #Nesting structure. Creating dict with keys and values
     dict_columns_vs_values_single_dist = dict(zip(columns_to_be_checked, list_of_values_dist_config))
@@ -151,17 +162,20 @@ def declaring_de_para_dates(month):
 
 def processing_dates(dists_individual_info_list, distributor, df_neogrid_template, df_input):
 
-    if dists_individual_info_list[distributor]['Dia']:
-        day = dists_individual_info_list[distributor]['Dia']
-    else:
-        day = str(df_neogrid_template.loc[0, 'Dia'])
+    input_date_format = dists_individual_info_list[distributor]['date_format']
+    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format, errors='coerce')
 
-    year = day[:4]
-    month = day[4:6]
+    if dists_individual_info_list[distributor]['Dia']:
+        day = datetime.strptime(dists_individual_info_list[distributor]['Dia'], input_date_format)
+    else:
+        day = df_neogrid_template.loc[0, 'Dia']
+
+    year = str(day.year)
+    month = str(day.month).zfill(2)
     trim = year + ' Trimestre ' + declaring_de_para_dates(month)[0]
     month = year + ' ' + declaring_de_para_dates(month)[1]
 
-    year_month_to_create_time_stamp = day[:6]
+    year_month_to_create_time_stamp = year + month
 
     dates = {
         'year' : year,
@@ -169,9 +183,6 @@ def processing_dates(dists_individual_info_list, distributor, df_neogrid_templat
         'trim' : trim,
         'time_stamp': year_month_to_create_time_stamp
     }
-
-    input_date_format = dists_individual_info_list[distributor]['date_format']
-    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format, errors='coerce')
 
     return dates, df_neogrid_template
 
@@ -214,13 +225,8 @@ def writing_neogrid_template_file(df_neogrid_template, distribuidor, input_file_
 
     df_neogrid_template.to_excel(output_file_name + '.xlsx', index=False)
     df_neogrid_template.to_csv(output_file_name + '.txt', index=False, sep=';', encoding='mbcs')
-
-
-
-def release_memory_data_frames():
-    pass
     
-    
+
 def main():
 
     try:
@@ -248,6 +254,13 @@ def main():
     try:
         print('sanitizing_config_file')
         df_dist_config = sanitizing_config_file(df_dist_config)
+    except Exception as error:
+        print(error)
+        sys.exit(1)
+    
+    try:
+        print('sanitizing_data_dictionary')
+        df_data_dict = sanitizing_data_dictionary(df_data_dict)
     except Exception as error:
         print(error)
         sys.exit(1)
@@ -311,6 +324,12 @@ def main():
             except Exception as error:
                 print(error)
                 sys.exit(1)
+
+
+            #Releasing memory before loading the next input dataFrame
+            gc.collect()
+            df_input = pd.DataFrame()
+
 
             print('{} - Successfully executed!'.format(distributor))
     else:
