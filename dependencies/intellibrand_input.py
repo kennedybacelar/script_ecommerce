@@ -1,6 +1,6 @@
 import pandas as pd
 
-def loading_df_input(input_file_name, header, extra_arg):
+def loading_df_input(input_file_name, header, input_date_format, extra_arg):
 
     with open(input_file_name) as f:
         input_file = list(f.readlines()[header:])

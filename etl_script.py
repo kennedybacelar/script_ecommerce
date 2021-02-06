@@ -80,9 +80,18 @@ def filtering_config_info(df_dist_config):
     return dists_individual_info_list
 
 
-def loading_input_file(folder_name, header, has_specific_script, extra_arg):
+def loading_input_file(distributor, dists_individual_info_list):
 
-    header = int(header)
+    # If there's specific script file to the distributor, and if the file contains Date Column
+    # This Date column has to be returned as a Datetime() object
+
+    folder_name = dists_individual_info_list[distributor]['folder_name']
+    header = int(dists_individual_info_list[distributor]['header'])
+    has_specific_script = dists_individual_info_list[distributor]['script_file']
+    extra_arg = dists_individual_info_list[distributor]['extra_arg']
+    extra_arg = dists_individual_info_list[distributor]['extra_arg']
+    input_date_format = dists_individual_info_list[distributor]['date_format']
+
     input_directory = '../' + folder_name + '/Input'
 
     if not os.path.isdir(input_directory):
@@ -101,7 +110,7 @@ def loading_input_file(folder_name, header, has_specific_script, extra_arg):
 
         if has_specific_script:
             specific_input_script = __import__(has_specific_script)
-            df_input = specific_input_script.loading_df_input(input_file_name, header, extra_arg)
+            df_input = specific_input_script.loading_df_input(input_file_name, header, input_date_format, extra_arg)
             return df_input, input_file_name
         df_input = pd.read_excel(input_file_name, dtype=str, header=header).fillna('')
     return df_input, input_file_name
@@ -111,10 +120,10 @@ def assigning_columns(df_dist_config, df_data_dict, distributor, df_neogrid_temp
     
     #Creating list of keys of dict
     #(Remembering that data_dict index has been set in previous function) - That's because [:5] and not [:6]
-    columns_to_be_checked = df_dist_config.columns[5:]
+    columns_to_be_checked = df_dist_config.columns[6:]
 
     #Creating list of values of dict
-    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[5:]
+    list_of_values_dist_config = df_dist_config.loc[distributor].to_list()[6:]
 
     #Nesting structure. Creating dict with keys and values
     dict_columns_vs_values_single_dist = dict(zip(columns_to_be_checked, list_of_values_dist_config))
@@ -131,7 +140,7 @@ def assigning_columns(df_dist_config, df_data_dict, distributor, df_neogrid_temp
             if column_field_name not in list_of_non_empty_values_in_static_dist:
                 df_neogrid_template[column_field_name] = df_input[df_data_dict.loc[column_field_name, distributor]]
         except KeyError as error:
-            print('{}- Column not present in input file'.format(error))
+            print('{} : {} : {} - unmapped column'.format(distributor, column_field_name, error))
     
 
     for column_field_name, static_value in dict_columns_vs_values_single_dist.items():
@@ -163,7 +172,6 @@ def declaring_de_para_dates(month):
 def processing_dates(dists_individual_info_list, distributor, df_neogrid_template, df_input):
 
     input_date_format = dists_individual_info_list[distributor]['date_format']
-    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format, errors='coerce')
 
     if dists_individual_info_list[distributor]['Dia']:
         day = datetime.strptime(dists_individual_info_list[distributor]['Dia'], input_date_format)
@@ -277,10 +285,7 @@ def main():
             
             try:
                 print('loading_input_file {}'.format(distributor))
-                df_input, input_file_name = loading_input_file(dists_individual_info_list[distributor]['folder_name'],
-                        dists_individual_info_list[distributor]['header'],
-                        dists_individual_info_list[distributor]['script_file'],
-                        dists_individual_info_list[distributor]['extra_arg'])
+                df_input, input_file_name = loading_input_file(distributor, dists_individual_info_list)
             except Exception as error:
                 print(error)
                 sys.exit(1)
@@ -334,7 +339,7 @@ def main():
             print('{} - Successfully executed!'.format(distributor))
     else:
         print('No distributor to be processed!')
-    input('Press any key to close')
+    input('Press any key to close\n')
 
 if __name__ == '__main__':
     main()
