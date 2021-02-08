@@ -172,11 +172,9 @@ def declaring_de_para_dates(month):
 def processing_dates(dists_individual_info_list, distributor, df_neogrid_template, df_input):
 
     input_date_format = dists_individual_info_list[distributor]['date_format']
-
-    if dists_individual_info_list[distributor]['Dia']:
-        day = datetime.strptime(dists_individual_info_list[distributor]['Dia'], input_date_format)
-    else:
-        day = df_neogrid_template.loc[0, 'Dia']
+    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format)
+    
+    day = df_neogrid_template.loc[0, 'Dia']
 
     year = str(day.year)
     month = str(day.month).zfill(2)
