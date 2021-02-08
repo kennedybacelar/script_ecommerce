@@ -206,6 +206,14 @@ def filling_dates_into_neogrid_template(df_neogrid_template, dates):
     return df_neogrid_template
 
 
+def sanitizing_neogrid_template(df_neogrid_template):
+
+    df_neogrid_template['Quantidade Venda (unidade)'] = df_neogrid_template['Quantidade Venda (unidade)'].fillna(0)
+    df_neogrid_template['Valor de Venda'] = df_neogrid_template['Valor de Venda'].fillna(0)
+
+    return df_neogrid_template
+
+
 def moving_input_file_to_archive(input_file_name):
     
     archive_path = '/'.join(input_file_name.split('/')[:-2]) + '/Archive'
@@ -309,6 +317,13 @@ def main():
                 print('filling_dates_into_neogrid_template')
                 df_neogrid_template = filling_dates_into_neogrid_template(
                     df_neogrid_template, dates)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+            
+            try:
+                print('sanitizing_neogrid_template')
+                sanitizing_neogrid_template(df_neogrid_template)
             except Exception as error:
                 print(error)
                 sys.exit(1)
