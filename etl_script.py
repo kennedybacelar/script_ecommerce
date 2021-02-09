@@ -180,7 +180,7 @@ def declaring_de_para_dates(month):
 def processing_dates(dists_individual_info_list, distributor, df_neogrid_template, df_input):
 
     input_date_format = dists_individual_info_list[distributor]['date_format']
-    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format)
+    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format, errors='coerce')
     
     day = df_neogrid_template.loc[0, 'Dia']
 
@@ -217,7 +217,8 @@ def filling_dates_into_neogrid_template(df_neogrid_template, dates):
 def sanitizing_neogrid_template(df_neogrid_template):
 
     df_neogrid_template['Quantidade Venda (unidade)'] = df_neogrid_template['Quantidade Venda (unidade)'].fillna(0)
-    df_neogrid_template['Valor de Venda'] = df_neogrid_template['Valor de Venda'].fillna(0)
+    df_neogrid_template['Valor de Venda'] = pd.to_numeric(df_neogrid_template['Valor de Venda'], errors='coerce').fillna(0)
+    df_neogrid_template['Valor de Venda'] = df_neogrid_template['Valor de Venda'].round(2)
 
     #Dropping rows where EANs are not filled
     df_neogrid_template.drop(df_neogrid_template[df_neogrid_template['EAN Produto Fabricante']==''].index, inplace=True)
@@ -256,7 +257,7 @@ def ean_validation(distributor, df_ean_and_description, df_diageo_products, df_n
 def writing_new_products_file(distributor, input_file_name, df_new_products, timestamp_year_and_month):
 
     final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
-    new_products_path = '/'.join(input_file_name.split('/')[:-2]) + '/new_products'
+    new_products_path = '/'.join(input_file_name.split('/')[:-2]) + '/New_products'
     new_products_file_name = new_products_path + '/DBD_DIAGEO_' + distributor + '_' + final_time_stamp + '.xlsx'
 
     if not os.path.isdir(new_products_path):
@@ -380,18 +381,30 @@ def main():
                 print(error)
                 sys.exit(1)
                 
+            try:
+                print('slicing_de_para_products')
+                df_diageo_products, df_non_diageo_products = slicing_de_para_products(df_de_para_products)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
             
-            df_diageo_products, df_non_diageo_products = slicing_de_para_products(df_de_para_products)
-            df_new_products = ean_validation(distributor,
-            df_neogrid_template[['EAN Produto Fabricante', 'Descrição Produto Fabricante']],
-            df_diageo_products, df_non_diageo_products)
+            try:
+                print('ean_validation')
+                df_new_products = ean_validation(distributor,
+                    df_neogrid_template[['EAN Produto Fabricante', 'Descrição Produto Fabricante']],
+                    df_diageo_products, df_non_diageo_products)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
 
-            writing_new_products_file(
-                distributor, input_file_name,
-                df_new_products, dates['time_stamp'])
-
-            #print(df_de_para_products.head(4))
-            exit()
+            if len(df_new_products) > 0:
+                try:
+                    print('writing_new_products_file')
+                    writing_new_products_file(distributor, input_file_name,
+                        df_new_products, dates['time_stamp'])
+                except Exception as error:
+                    print(error)
+                    sys.exit()
 
             try:
                 print('writing_neogrid_template_file')
@@ -409,10 +422,10 @@ def main():
                 sys.exit(1)
 
 
-            #Releasing memory before loading the next input dataFrame
+            #Releasing memory before loading the next dataFrames
             gc.collect()
             df_input = pd.DataFrame()
-
+            df_new_products = pd.DataFrame()
 
             print('{} - Successfully executed!'.format(distributor))
     else:
