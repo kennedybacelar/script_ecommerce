@@ -236,22 +236,24 @@ def slicing_de_para_products(df_de_para_products):
     return df_diageo_products, df_non_diageo_products
 
 
-def ean_validation(distributor, df_ean_and_description, df_diageo_products, df_non_diageo_products):
+def ean_validation(distributor, df_neogrid_template, df_diageo_products, df_non_diageo_products):
 
-    df_ean_and_description['VAREJO'] = distributor.upper()
+    df_neogrid_template['key_VAREJO'] = df_neogrid_template['Nome do Varejo'].str.upper()
+    df_neogrid_template['key_EAN'] = df_neogrid_template['EAN Produto Fabricante']
 
     #filtering_elements_non_diageo from dataframe(column) of all EAN's and removing them
-    to_be_dropped = df_ean_and_description[df_ean_and_description['EAN Produto Fabricante'].isin(df_non_diageo_products['EAN'])]
-    df_ean_and_description.drop(to_be_dropped.index, inplace=True)
+    to_be_dropped = df_neogrid_template[df_neogrid_template['EAN Produto Fabricante'].isin(df_non_diageo_products['EAN'])]
+    df_neogrid_template.drop(to_be_dropped.index, inplace=True)
 
-    df_ean_and_description.set_index(['VAREJO', 'EAN Produto Fabricante'], inplace=True)
+    df_neogrid_template.set_index(['key_VAREJO', 'key_EAN'], inplace=True)
 
-    new_products_indexes = ~df_ean_and_description.index.isin(df_diageo_products.index)
+    new_products_indexes = ~df_neogrid_template.index.isin(df_diageo_products.index)
 
-    new_products = df_ean_and_description[new_products_indexes]
-    new_products.reset_index(inplace=True)
+    df_new_products = df_neogrid_template[new_products_indexes][['Nome do Varejo', 'EAN Produto Fabricante', 'Descrição Produto Fabricante']]
+    df_new_products.reset_index(drop=True, inplace=True)
+    df_neogrid_template.reset_index(drop=True, inplace=True)
 
-    return new_products
+    return df_neogrid_template, df_new_products
 
 
 def writing_new_products_file(distributor, input_file_name, df_new_products, timestamp_year_and_month):
@@ -390,8 +392,8 @@ def main():
             
             try:
                 print('ean_validation')
-                df_new_products = ean_validation(distributor,
-                    df_neogrid_template[['EAN Produto Fabricante', 'Descrição Produto Fabricante']],
+                df_neogrid_template, df_new_products = ean_validation(distributor,
+                    df_neogrid_template,
                     df_diageo_products, df_non_diageo_products)
             except Exception as error:
                 print(error)
