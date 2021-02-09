@@ -13,24 +13,21 @@ def setting_config_paths():
 
     dist_config_path = '../distributors_config.xlsx'
     data_dictionary_path = '../data_dictionary.xlsx'
+    de_para_products_path = '../de_para_products_ecom.xlsx'
+    neogrid_template_path = '../TEMPLATE Neogrid.xlsx'
 
-    return dist_config_path, data_dictionary_path
+    return dist_config_path, data_dictionary_path, de_para_products_path, neogrid_template_path
 
 
-def loading_config_information(dist_config_path, data_dictionary_path):
+def loading_config_information(dist_config_path, data_dictionary_path,
+    de_para_products_path, neogrid_template_path):
 
     df_dist_config = pd.read_excel(open(dist_config_path, 'rb'), dtype=str, header=0).fillna('')
     df_data_dict = pd.read_excel(data_dictionary_path, dtype=str, header=0).fillna('')
+    df_de_para_products = pd.read_excel(de_para_products_path, dtype=str, header=0).fillna('')
+    df_neogrid_template = pd.read_excel(neogrid_template_path, dtype=str, header=0).fillna('')
     
-    return df_dist_config, df_data_dict
-
-
-def loading_neogrid_template():
-
-    neogrid_file_path_template = '../TEMPLATE Neogrid.xlsx'
-    df_neogrid_template = pd.read_excel(neogrid_file_path_template, dtype=str, header=0).fillna('')
-
-    return df_neogrid_template
+    return df_dist_config, df_data_dict, df_de_para_products, df_neogrid_template
 
 
 def sanitizing_config_file(df_dist_config):
@@ -57,6 +54,17 @@ def sanitizing_data_dictionary(df_data_dict):
     df_data_dict.set_index(['Neogrid_template'], inplace=True)
 
     return df_data_dict
+
+
+def sanitizing_de_para_products(df_de_para_products):
+
+    for column in df_de_para_products.columns:
+        df_de_para_products[column] = df_de_para_products[column].str.strip()
+    
+    #Making sure that every element of index is gonna be compared with lower case characteres
+    df_de_para_products['key_distributor'] = df_de_para_products['VAREJO'].str.upper()
+    
+    return df_de_para_products
 
 
 def filtering_config_info(df_dist_config):
@@ -172,7 +180,7 @@ def declaring_de_para_dates(month):
 def processing_dates(dists_individual_info_list, distributor, df_neogrid_template, df_input):
 
     input_date_format = dists_individual_info_list[distributor]['date_format']
-    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format)
+    df_neogrid_template['Dia'] = pd.to_datetime(df_neogrid_template['Dia'], format=input_date_format, errors='coerce')
     
     day = df_neogrid_template.loc[0, 'Dia']
 
@@ -209,30 +217,76 @@ def filling_dates_into_neogrid_template(df_neogrid_template, dates):
 def sanitizing_neogrid_template(df_neogrid_template):
 
     df_neogrid_template['Quantidade Venda (unidade)'] = df_neogrid_template['Quantidade Venda (unidade)'].fillna(0)
-    df_neogrid_template['Valor de Venda'] = df_neogrid_template['Valor de Venda'].fillna(0)
+    df_neogrid_template['Valor de Venda'] = pd.to_numeric(df_neogrid_template['Valor de Venda'], errors='coerce').fillna(0)
+    df_neogrid_template['Valor de Venda'] = df_neogrid_template['Valor de Venda'].round(2)
+
+    #Dropping rows where EANs are not filled
+    df_neogrid_template.drop(df_neogrid_template[df_neogrid_template['EAN Produto Fabricante']==''].index, inplace=True)
 
     return df_neogrid_template
+
+
+def slicing_de_para_products(df_de_para_products):
+
+    df_non_diageo_products = df_de_para_products[df_de_para_products['SKU'] == '-1']
+    df_diageo_products = df_de_para_products.drop(df_non_diageo_products.index)
+
+    df_diageo_products.set_index(['key_distributor', 'EAN'], inplace=True)
+
+    return df_diageo_products, df_non_diageo_products
+
+
+def ean_validation(distributor, df_neogrid_template, df_diageo_products, df_non_diageo_products):
+
+    df_neogrid_template['key_VAREJO'] = df_neogrid_template['Nome do Varejo'].str.upper()
+    df_neogrid_template['key_EAN'] = df_neogrid_template['EAN Produto Fabricante']
+
+    #filtering_elements_non_diageo from dataframe(column) of all EAN's and removing them
+    to_be_dropped = df_neogrid_template[df_neogrid_template['EAN Produto Fabricante'].isin(df_non_diageo_products['EAN'])]
+    df_neogrid_template.drop(to_be_dropped.index, inplace=True)
+
+    df_neogrid_template.set_index(['key_VAREJO', 'key_EAN'], inplace=True)
+
+    new_products_indexes = ~df_neogrid_template.index.isin(df_diageo_products.index)
+
+    df_new_products = df_neogrid_template[new_products_indexes][['Nome do Varejo', 'EAN Produto Fabricante', 'Descrição Produto Fabricante']]
+    df_new_products.reset_index(drop=True, inplace=True)
+    df_neogrid_template.reset_index(drop=True, inplace=True)
+
+    return df_neogrid_template, df_new_products
+
+
+def writing_new_products_file(distributor, input_file_name, df_new_products, timestamp_year_and_month):
+
+    final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
+    new_products_path = '/'.join(input_file_name.split('/')[:-2]) + '/New_products'
+    new_products_file_name = new_products_path + '/DBD_DIAGEO_' + distributor + '_' + final_time_stamp + '.xlsx'
+
+    if not os.path.isdir(new_products_path):
+        os.mkdir(new_products_path)
+    
+    df_new_products.to_excel(new_products_file_name, index=False)
+
+    return True
 
 
 def moving_input_file_to_archive(input_file_name):
     
     archive_path = '/'.join(input_file_name.split('/')[:-2]) + '/Archive'
-
     if not os.path.isdir(archive_path):
         os.mkdir(archive_path)
-    
-    file_moved_path = archive_path + '/' + input_file_name.split('/')[-1] + 'archived'
 
+    file_moved_path = archive_path + '/' + input_file_name.split('/')[-1] + 'archived'
     os.rename(input_file_name, file_moved_path)
 
+    return True
 
-def writing_neogrid_template_file(df_neogrid_template, distribuidor, input_file_name, timestamp_year_and_month):
+
+def writing_neogrid_template_file(df_neogrid_template, distributor, input_file_name, timestamp_year_and_month):
 
     final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
-
     output_path = '/'.join(input_file_name.split('/')[:-2]) + '/Output'
-
-    output_file_name = output_path + '/DBD_DIAGEO_' + distribuidor + '_' + final_time_stamp
+    output_file_name = output_path + '/DBD_DIAGEO_' + distributor + '_' + final_time_stamp
 
     if not os.path.isdir(output_path):
         os.mkdir(output_path)
@@ -240,27 +294,21 @@ def writing_neogrid_template_file(df_neogrid_template, distribuidor, input_file_
     df_neogrid_template.to_excel(output_file_name + '.xlsx', index=False)
     df_neogrid_template.to_csv(output_file_name + '.txt', index=False, sep=';', encoding='mbcs')
     
+    return True
 
 def main():
 
     try:
         print('setting_config_paths')
-        dist_config_path, data_dictionary_path = setting_config_paths()
+        dist_config_path, data_dictionary_path, de_para_products_path, neogrid_template_path = setting_config_paths()
     except Exception as error:
         print(error)
         sys.exit(1)
 
     try:
         print('loading_config_information')
-        df_dist_config, df_data_dict = loading_config_information(dist_config_path, 
-            data_dictionary_path)
-    except Exception as error:
-        print(error)
-        sys.exit(1)
-
-    try:
-        print('loading_neogrid_template')
-        df_neogrid_template = loading_neogrid_template()
+        df_dist_config, df_data_dict, df_de_para_products, df_neogrid_template = loading_config_information(dist_config_path, 
+            data_dictionary_path, de_para_products_path, neogrid_template_path)
     except Exception as error:
         print(error)
         sys.exit(1)
@@ -275,6 +323,13 @@ def main():
     try:
         print('sanitizing_data_dictionary')
         df_data_dict = sanitizing_data_dictionary(df_data_dict)
+    except Exception as error:
+        print(error)
+        sys.exit(1)
+    
+    try:
+        print('sanitizing_de_para_products')
+        df_de_para_products = sanitizing_de_para_products(df_de_para_products)
     except Exception as error:
         print(error)
         sys.exit(1)
@@ -327,6 +382,31 @@ def main():
             except Exception as error:
                 print(error)
                 sys.exit(1)
+                
+            try:
+                print('slicing_de_para_products')
+                df_diageo_products, df_non_diageo_products = slicing_de_para_products(df_de_para_products)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+            
+            try:
+                print('ean_validation')
+                df_neogrid_template, df_new_products = ean_validation(distributor,
+                    df_neogrid_template,
+                    df_diageo_products, df_non_diageo_products)
+            except Exception as error:
+                print(error)
+                sys.exit(1)
+
+            if len(df_new_products) > 0:
+                try:
+                    print('writing_new_products_file')
+                    writing_new_products_file(distributor, input_file_name,
+                        df_new_products, dates['time_stamp'])
+                except Exception as error:
+                    print(error)
+                    sys.exit()
 
             try:
                 print('writing_neogrid_template_file')
@@ -344,10 +424,10 @@ def main():
                 sys.exit(1)
 
 
-            #Releasing memory before loading the next input dataFrame
+            #Releasing memory before loading the next dataFrames
             gc.collect()
             df_input = pd.DataFrame()
-
+            df_new_products = pd.DataFrame()
 
             print('{} - Successfully executed!'.format(distributor))
     else:
