@@ -260,7 +260,7 @@ def writing_new_products_file(distributor, input_file_name, df_new_products, tim
 
     final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
     new_products_path = '/'.join(input_file_name.split('/')[:-2]) + '/New_products'
-    new_products_file_name = new_products_path + '/DBD_DIAGEO_' + distributor + '_' + final_time_stamp + '.xlsx'
+    new_products_file_name = new_products_path + '/NEW_Prod_' + distributor + '_' + final_time_stamp + '.xlsx'
 
     if not os.path.isdir(new_products_path):
         os.mkdir(new_products_path)
