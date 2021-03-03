@@ -97,7 +97,6 @@ def loading_input_file(distributor, dists_individual_info_list):
     header = int(dists_individual_info_list[distributor]['header'])
     has_specific_script = dists_individual_info_list[distributor]['script_file']
     extra_arg = dists_individual_info_list[distributor]['extra_arg']
-    extra_arg = dists_individual_info_list[distributor]['extra_arg']
     input_date_format = dists_individual_info_list[distributor]['date_format']
 
     input_directory = '../' + folder_name + '/Input'
@@ -229,21 +228,28 @@ def sanitizing_neogrid_template(df_neogrid_template):
 def slicing_de_para_products(df_de_para_products):
 
     df_non_diageo_products = df_de_para_products[df_de_para_products['SKU'] == '-1']
+    df_acessorios = df_de_para_products[df_de_para_products['SKU'] == '-2']
+
     df_diageo_products = df_de_para_products.drop(df_non_diageo_products.index)
+    df_diageo_products = df_diageo_products.drop(df_acessorios.index)
 
     df_diageo_products.set_index(['key_distributor', 'EAN'], inplace=True)
 
-    return df_diageo_products, df_non_diageo_products
+    return df_diageo_products, df_non_diageo_products, df_acessorios
 
 
-def ean_validation(distributor, df_neogrid_template, df_diageo_products, df_non_diageo_products):
+def ean_validation(distributor, df_neogrid_template, df_diageo_products, df_non_diageo_products, df_acessorios):
 
     df_neogrid_template['key_VAREJO'] = df_neogrid_template['Nome do Varejo'].str.upper()
     df_neogrid_template['key_EAN'] = df_neogrid_template['EAN Produto Fabricante']
 
     #filtering_elements_non_diageo from dataframe(column) of all EAN's and removing them
-    to_be_dropped = df_neogrid_template[df_neogrid_template['EAN Produto Fabricante'].isin(df_non_diageo_products['EAN'])]
-    df_neogrid_template.drop(to_be_dropped.index, inplace=True)
+    to_be_dropped_non_diageo = df_neogrid_template[df_neogrid_template['EAN Produto Fabricante'].isin(df_non_diageo_products['EAN'])]
+    df_neogrid_template.drop(to_be_dropped_non_diageo.index, inplace=True)
+
+    #Overwriting df_acessorios with df in Neogrid Format
+    df_acessorios_neogrid_template = df_neogrid_template[df_neogrid_template['EAN Produto Fabricante'].isin(df_acessorios['EAN'])]
+    df_neogrid_template.drop(df_acessorios_neogrid_template.index, inplace=True)
 
     df_neogrid_template.set_index(['key_VAREJO', 'key_EAN'], inplace=True)
 
@@ -253,14 +259,43 @@ def ean_validation(distributor, df_neogrid_template, df_diageo_products, df_non_
     df_new_products.reset_index(drop=True, inplace=True)
     df_neogrid_template.reset_index(drop=True, inplace=True)
 
-    return df_neogrid_template, df_new_products
+    return df_neogrid_template, df_new_products, df_acessorios_neogrid_template
+
+
+def assigning_columns_acessorios(df_acessorios, df_acessorios_neogrid_template):
+
+    df_acessorios_neogrid_template = df_acessorios_neogrid_template[['key_VAREJO', 'key_EAN',
+    'Nome do Varejo', 'EAN Produto Fabricante', 'Dia', 'Descrição Produto Fabricante',
+    'Quantidade Venda (unidade)', 'Valor de Venda']]
+
+    df_acessorios_neogrid_template.rename(columns={ 'Quantidade Venda (unidade)':'Depletion Volume Bottles',
+        'Valor de Venda':'Depletion RSV', 'Dia': 'Date Formatted',
+        'Descrição Produto Fabricante': 'L5 - Individual Variant' }, inplace=True)
+
+    df_acessorios_neogrid_template.set_index(['key_VAREJO', 'key_EAN'], inplace=True)
+
+    df_acessorios.set_index(['VAREJO', 'EAN'], inplace=True)
+    df_acessorios = df_acessorios[~df_acessorios.index.duplicated(keep='first')]
+
+    for single_index in df_acessorios_neogrid_template.index:
+        df_acessorios_neogrid_template.loc[single_index, 'L3 - Brand'] = df_acessorios.loc[single_index, 'BRAND']
+        df_acessorios_neogrid_template.loc[single_index, 'L6 - Volume'] = df_acessorios.loc[single_index, 'VOLUME']
+
+    df_acessorios_neogrid_template['L2 - Product Group'] = 'Acessórios'
+
+    df_acessorios_neogrid_template = df_acessorios_neogrid_template[['Nome do Varejo', 'EAN Produto Fabricante', 'Date Formatted',
+        'L2 - Product Group', 'L3 - Brand', 'L5 - Individual Variant', 'L6 - Volume', 'Depletion Volume Bottles', 'Depletion RSV']]
+
+    df_acessorios_neogrid_template.reset_index(drop=True, inplace=True)
+
+    return df_acessorios_neogrid_template
 
 
 def writing_new_products_file(distributor, input_file_name, df_new_products, timestamp_year_and_month):
 
     final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
     new_products_path = '/'.join(input_file_name.split('/')[:-2]) + '/New_products'
-    new_products_file_name = new_products_path + '/DBD_DIAGEO_' + distributor + '_' + final_time_stamp + '.xlsx'
+    new_products_file_name = new_products_path + '/NEW_Prod_' + distributor + '_' + final_time_stamp + '.xlsx'
 
     if not os.path.isdir(new_products_path):
         os.mkdir(new_products_path)
@@ -270,13 +305,28 @@ def writing_new_products_file(distributor, input_file_name, df_new_products, tim
     return True
 
 
-def moving_input_file_to_archive(input_file_name):
+def writing_acessorios_file(distributor, input_file_name, df_acessorios_neogrid_template, timestamp_year_and_month):
+
+    final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
+    acessorios_path = '/'.join(input_file_name.split('/')[:-2]) + '/Acessorios'
+    acessorios_file_name = acessorios_path + '/Acessorios_' + distributor + '_' + final_time_stamp + '.xlsx'
+
+    if not os.path.isdir(acessorios_path):
+        os.mkdir(acessorios_path)
     
+    df_acessorios_neogrid_template.to_excel(acessorios_file_name, index=False)
+
+    return True
+
+
+def moving_input_file_to_archive(input_file_name, timestamp_year_and_month):
+    
+    final_time_stamp = timestamp_year_and_month + datetime.today().strftime("%H%M%S")
     archive_path = '/'.join(input_file_name.split('/')[:-2]) + '/Archive'
     if not os.path.isdir(archive_path):
         os.mkdir(archive_path)
 
-    file_moved_path = archive_path + '/' + input_file_name.split('/')[-1] + 'archived'
+    file_moved_path = archive_path + '/' + input_file_name.split('/')[-1] + final_time_stamp + 'archived'
     os.rename(input_file_name, file_moved_path)
 
     return True
@@ -385,19 +435,34 @@ def main():
                 
             try:
                 print('slicing_de_para_products')
-                df_diageo_products, df_non_diageo_products = slicing_de_para_products(df_de_para_products)
+                df_diageo_products, df_non_diageo_products, df_acessorios = slicing_de_para_products(df_de_para_products)
             except Exception as error:
                 print(error)
                 sys.exit(1)
             
             try:
                 print('ean_validation')
-                df_neogrid_template, df_new_products = ean_validation(distributor,
-                    df_neogrid_template,
-                    df_diageo_products, df_non_diageo_products)
+                df_neogrid_template, df_new_products, df_acessorios_neogrid_template = ean_validation(distributor,
+                    df_neogrid_template, df_diageo_products,
+                    df_non_diageo_products, df_acessorios)
             except Exception as error:
                 print(error)
                 sys.exit(1)
+            
+            if len(df_acessorios_neogrid_template)>0:
+                try:
+                    print('assigning_columns_acessorios')
+                    df_acessorios_neogrid_template = assigning_columns_acessorios(df_acessorios, df_acessorios_neogrid_template)
+                except Exception as error:
+                    print(error)
+                    sys.exit(1)
+            
+                try:
+                    print('writing_acessorios_file')
+                    writing_acessorios_file(distributor, input_file_name, df_acessorios_neogrid_template, dates['time_stamp'])
+                except Exception as error:
+                    print(error)
+                    sys.exit(1)
 
             if len(df_new_products) > 0:
                 try:
@@ -418,7 +483,7 @@ def main():
 
             try:
                 print('moving_input_file_to_archive')
-                moving_input_file_to_archive(input_file_name)
+                moving_input_file_to_archive(input_file_name, dates['time_stamp'])
             except Exception as error:
                 print(error)
                 sys.exit(1)
@@ -428,6 +493,7 @@ def main():
             gc.collect()
             df_input = pd.DataFrame()
             df_new_products = pd.DataFrame()
+            df_acessorios_neogrid_template = pd.DataFrame()
 
             print('{} - Successfully executed!'.format(distributor))
     else:
