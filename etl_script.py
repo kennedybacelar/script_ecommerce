@@ -282,9 +282,11 @@ def assigning_columns_acessorios(df_acessorios, df_acessorios_neogrid_template):
         df_acessorios_neogrid_template.loc[single_index, 'L6 - Volume'] = df_acessorios.loc[single_index, 'VOLUME']
 
     df_acessorios_neogrid_template['L2 - Product Group'] = 'Acessórios'
+    df_acessorios_neogrid_template['Depletion Volume EU'] = df_acessorios_neogrid_template['Depletion Volume Bottles']
 
-    df_acessorios_neogrid_template = df_acessorios_neogrid_template[['Nome do Varejo', 'EAN Produto Fabricante', 'Date Formatted',
-        'L2 - Product Group', 'L3 - Brand', 'L5 - Individual Variant', 'L6 - Volume', 'Depletion Volume Bottles', 'Depletion RSV']]
+    df_acessorios_neogrid_template = df_acessorios_neogrid_template[['Date Formatted','L2 - Product Group',
+        'L3 - Brand', 'L5 - Individual Variant', 'L6 - Volume',
+        'Depletion Volume EU', 'Depletion Volume Bottles', 'Depletion RSV']]
 
     df_acessorios_neogrid_template.reset_index(drop=True, inplace=True)
 
