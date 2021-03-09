@@ -215,7 +215,7 @@ def filling_dates_into_neogrid_template(df_neogrid_template, dates):
 
 def sanitizing_neogrid_template(df_neogrid_template):
 
-    df_neogrid_template['Quantidade Venda (unidade)'] = df_neogrid_template['Quantidade Venda (unidade)'].fillna(0)
+    df_neogrid_template['Quantidade Venda (unidade)'] = pd.to_numeric(df_neogrid_template['Quantidade Venda (unidade)'], errors='coerce').fillna(0)
     df_neogrid_template['Valor de Venda'] = pd.to_numeric(df_neogrid_template['Valor de Venda'], errors='coerce').fillna(0)
     df_neogrid_template['Valor de Venda'] = df_neogrid_template['Valor de Venda'].round(2)
 

@@ -17,7 +17,7 @@ def loading_df_input(input_file_name, header, input_date_format, extra_arg):
     )
 
     df_input['Dia'] = year_and_month + df_input['Dia'].str.zfill(2)
-    df_input['Dia'] = pd.to_datetime(df_input['Dia'], format='%Y%m%d', errors='raise')
+    df_input['Dia'] = pd.to_datetime(df_input['Dia'], format=input_date_format, errors='raise')
     df_input.reset_index(drop=True, inplace=True)
 
     return df_input
